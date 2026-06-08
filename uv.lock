@@ -2336,6 +2336,7 @@ dependencies = [
     { name = "llama-cpp-python" },
     { name = "pymupdf" },
     { name = "pymupdf4llm" },
+    { name = "rich" },
     { name = "sentence-transformers" },
     { name = "tqdm" },
 ]
@@ -2348,6 +2349,7 @@ requires-dist = [
     { name = "llama-cpp-python", specifier = ">=0.3.25" },
     { name = "pymupdf", specifier = ">=1.27.2.3" },
     { name = "pymupdf4llm", specifier = ">=1.27.2.3" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "sentence-transformers", specifier = ">=5.5.1" },
     { name = "tqdm", specifier = ">=4.68.1" },
 ]
