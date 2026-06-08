@@ -225,3 +225,7 @@ __marimo__/
 .*.swp
 .*.swo
 .*.swn
+
+# Project data
+chroma_db/
+*.pdf
