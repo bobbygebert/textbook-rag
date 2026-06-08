@@ -228,4 +228,5 @@ __marimo__/
 
 # Project data
 chroma_db/
+chunks.jsonl
 *.pdf

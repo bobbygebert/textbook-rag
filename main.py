@@ -1,5 +1,7 @@
 import argparse
+import json
 import time
+from collections import Counter
 from collections.abc import Iterator
 from typing import Any, cast
 
@@ -9,6 +11,7 @@ import pymupdf
 import pymupdf4llm
 import tqdm
 from chromadb import Metadata
+from langchain_core.documents import Document
 from llama_cpp import Llama
 from llama_cpp.llama_types import ChatCompletionRequestMessage
 from rich.console import Console
@@ -25,7 +28,6 @@ console = Console()
 
 
 def header(text: str, color: str = "light_sky_blue1"):
-    """Print a bold section header (pastel blue by default)."""
     console.print(f"\n{text}", style=f"bold {color}")
 
 
@@ -103,15 +105,7 @@ def prompt(args: argparse.Namespace):
     llm.close()
 
 
-def index(args: argparse.Namespace):
-    doc_path: str = args.path
-    chroma_client = chromadb.PersistentClient(path="chroma_db")
-    collection = chroma_client.get_or_create_collection(name="textbook")
-    assert (
-        collection.count() == 0
-    ), "Remove existing collection under chroma_db if you wish to replace it."
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-
+def chunk_document(doc_path: str) -> list[Document]:
     # Parse the PDF to markdown, one entry per page (with page-number metadata).
     # header/footer=False drops running heads/footers so they don't pollute chunks.
     doc = pymupdf.open(doc_path)
@@ -150,6 +144,56 @@ def index(args: argparse.Namespace):
         for c in page_chunks:
             c.metadata["page"] = page_number
         final_chunks.extend(page_chunks)
+    return final_chunks
+
+
+def chunk(args: argparse.Namespace):
+    doc_path: str = args.path
+    out_path: str = args.out
+
+    final_chunks = chunk_document(doc_path)
+
+    per_page_count = Counter()
+    with open(out_path, "w") as f:
+        for chunk in final_chunks:
+            p = chunk.metadata["page"]
+            c = per_page_count[p]
+            per_page_count[p] += 1
+            record = {"id": f"p{p}_c{c}", "page": p, "text": chunk.page_content}
+            f.write(json.dumps(record) + "\n")
+    print(f"chunks: {len(final_chunks)} -> {out_path}")
+
+
+def load_chunks(chunks_path: str) -> list[Document]:
+    chunks = []
+    with open(chunks_path) as f:
+        for line in f:
+            record = json.loads(line)
+            chunks.append(
+                Document(
+                    page_content=record["text"],
+                    metadata={"page": record["page"]},
+                )
+            )
+    return chunks
+
+
+def index(args: argparse.Namespace):
+    doc_path: str | None = args.path
+    chunks_path: str | None = args.chunks
+    chroma_client = chromadb.PersistentClient(path="chroma_db")
+    collection = chroma_client.get_or_create_collection(name="textbook")
+    assert (
+        collection.count() == 0
+    ), "Remove existing collection under chroma_db if you wish to replace it."
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+    # argparse guarantees exactly one of path / --chunks is set.
+    if chunks_path:
+        final_chunks = load_chunks(chunks_path)
+    else:
+        assert doc_path is not None
+        final_chunks = chunk_document(doc_path)
 
     embeddings = []
     for c in tqdm.tqdm(final_chunks):
@@ -177,8 +221,23 @@ def main():
     prompt_parser.set_defaults(func=prompt)
 
     index_parser = subparsers.add_parser("index")
-    index_parser.add_argument("path", help="Path to the textbook to be indexed")
+    index_source = index_parser.add_mutually_exclusive_group(required=True)
+    index_source.add_argument(
+        "path", nargs="?", help="Path to the textbook to be indexed"
+    )
+    index_source.add_argument(
+        "--chunks", help="Path to a chunks JSONL (from the chunk command) to index"
+    )
     index_parser.set_defaults(func=index)
+
+    chunk_parser = subparsers.add_parser("chunk")
+    chunk_parser.add_argument("path", help="Path to the textbook to be chunked")
+    chunk_parser.add_argument(
+        "--out",
+        default="chunks.jsonl",
+        help="Output JSONL path (default: chunks.jsonl)",
+    )
+    chunk_parser.set_defaults(func=chunk)
 
     args = parser.parse_args()
     args.func(args)
