@@ -8,10 +8,7 @@ from rich.console import Console
 from rich.text import Text
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
-from commands.models import EMBEDDING_MODEL
-
-LLM_REPO_ID = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
-LLM_FILE = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+from commands.models import EMBEDDING_MODEL, LLM_FILE, LLM_REPO_ID, RERANKING_MODEL
 
 N_CANDIDATES = 20
 TOP_K = 4
@@ -50,7 +47,7 @@ def prompt(question: str):
         collection.count() > 0
     ), "No collection found under chroma_db. Run the index command to create it."
     embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    reranker = CrossEncoder(RERANKING_MODEL)
     llm = Llama.from_pretrained(
         repo_id=LLM_REPO_ID,
         filename=LLM_FILE,
