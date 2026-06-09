@@ -1,14 +1,57 @@
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 import numpy as np
 from rich.console import Console
+from rich.table import Table
 from sentence_transformers import SentenceTransformer
 
 from commands.models import EMBEDDING_MODEL
 
 console = Console()
+
+
+@dataclass(frozen=True)
+class EmbeddingModel:
+    name: str
+    query_prefix: str = ""
+    doc_prefix: str = ""
+
+
+EVAL_MODELS = [
+    EmbeddingModel(EMBEDDING_MODEL),
+    EmbeddingModel(
+        "BAAI/bge-small-en-v1.5",
+        query_prefix="Represent this sentence for searching relevant passages: ",
+    ),
+    EmbeddingModel(
+        "intfloat/e5-small-v2",
+        query_prefix="query: ",
+        doc_prefix="passage: ",
+    ),
+    EmbeddingModel(
+        "BAAI/bge-base-en-v1.5",
+        query_prefix="Represent this sentence for searching relevant passages: ",
+    ),
+]
+
+
+def encode(
+    model: SentenceTransformer, texts: list[str], prefix: str, batch_size: int
+) -> np.ndarray:
+    inputs = [prefix + t for t in texts] if prefix else texts
+    return cast(
+        np.ndarray,
+        model.encode(
+            inputs,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=True,
+        ),
+    )
 
 
 def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
@@ -33,36 +76,20 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
             questions.append(record["question"])
             gold_indices.append(id_to_idx[gold_id])
 
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-    chunk_embeddings = cast(
-        np.ndarray,
-        embedding_model.encode(
-            texts,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=True,
-        ),
-    )
-    query_embeddings = cast(
-        np.ndarray,
-        embedding_model.encode(
-            questions,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-            show_progress_bar=True,
-        ),
-    )
-    sims = query_embeddings @ chunk_embeddings.T
+    table = Table(title=f"Embedding model retrieval (recall@1, n={len(questions)})")
+    table.add_column("model")
+    table.add_column("recall@1", justify="right")
+    table.add_column("hits", justify="right")
 
-    top1 = sims.argmax(axis=1)
-    hits = int((top1 == gold_indices).sum())
-    recall_at_1 = hits / len(questions)
+    for cfg in EVAL_MODELS:
+        console.print(f"\n{cfg.name}", style="bold")
+        model = SentenceTransformer(cfg.name)
+        chunk_embeddings = encode(model, texts, cfg.doc_prefix, batch_size)
+        query_embeddings = encode(model, questions, cfg.query_prefix, batch_size)
+        sims = query_embeddings @ chunk_embeddings.T
+        top1 = sims.argmax(axis=1)
+        hits = int((top1 == gold_indices).sum())
+        recall_at_1 = hits / len(questions)
+        table.add_row(cfg.name, f"{recall_at_1:.3f}", f"{hits}/{len(questions)}")
 
-    console.print(
-        f"recall@1: {recall_at_1:.3f}  ({hits}/{len(questions)})  "
-        f"model={EMBEDDING_MODEL}",
-        style="bold",
-        highlight=False,
-    )
+    console.print(table)
