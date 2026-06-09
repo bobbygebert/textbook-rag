@@ -12,6 +12,8 @@ from commands.models import EMBEDDING_MODEL
 
 console = Console()
 
+RECALL_KS = (1, 5, 20)
+
 
 @dataclass(frozen=True)
 class EmbeddingModel:
@@ -76,10 +78,13 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
             questions.append(record["question"])
             gold_indices.append(id_to_idx[gold_id])
 
-    table = Table(title=f"Embedding model retrieval (recall@1, n={len(questions)})")
+    n = len(questions)
+
+    title = f"Embedding model retrieval (recall@k, n={n})"
+    table = Table(title=title)
     table.add_column("model")
-    table.add_column("recall@1", justify="right")
-    table.add_column("hits", justify="right")
+    for k in RECALL_KS:
+        table.add_column(f"recall@{k}", justify="right")
 
     for cfg in EVAL_MODELS:
         console.print(f"\n{cfg.name}", style="bold")
@@ -87,9 +92,9 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
         chunk_embeddings = encode(model, texts, cfg.doc_prefix, batch_size)
         query_embeddings = encode(model, questions, cfg.query_prefix, batch_size)
         sims = query_embeddings @ chunk_embeddings.T
-        top1 = sims.argmax(axis=1)
-        hits = int((top1 == gold_indices).sum())
-        recall_at_1 = hits / len(questions)
-        table.add_row(cfg.name, f"{recall_at_1:.3f}", f"{hits}/{len(questions)}")
+        gold_sims = sims[np.arange(n), np.array(gold_indices)]
+        ranks = (sims > gold_sims.reshape(n, 1)).sum(axis=1) + 1
+        recalls = [int((ranks <= k).sum()) / n for k in RECALL_KS]
+        table.add_row(cfg.name, *[f"{r:.3f}" for r in recalls])
 
     console.print(table)
