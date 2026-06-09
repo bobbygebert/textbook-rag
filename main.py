@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import chromadb
 import langchain_text_splitters
+import numpy as np
 import pymupdf
 import pymupdf4llm
 import tqdm
@@ -212,6 +213,67 @@ def index(args: argparse.Namespace):
         )
 
 
+def eval_models(args: argparse.Namespace):
+    chunks_path: str = args.chunks
+    test_set_path: str = args.test_set
+    batch_size: int = args.batch_size
+
+    ids: list[str] = []
+    texts: list[str] = []
+    with open(chunks_path) as f:
+        for line in f:
+            record = json.loads(line)
+            ids.append(record["id"])
+            texts.append(record["text"])
+    id_to_idx = {cid: i for i, cid in enumerate(ids)}
+
+    questions: list[str] = []
+    gold_indices: list[int] = []
+    with open(test_set_path) as f:
+        for line in f:
+            record = json.loads(line)
+            gold_id = record["gold_id"]
+            assert (
+                gold_id in id_to_idx
+            ), f"gold id {gold_id!r} not found in {chunks_path}"
+            questions.append(record["question"])
+            gold_indices.append(id_to_idx[gold_id])
+
+    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    chunk_embeddings = cast(
+        np.ndarray,
+        embedding_model.encode(
+            texts,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=True,
+        ),
+    )
+    query_embeddings = cast(
+        np.ndarray,
+        embedding_model.encode(
+            questions,
+            batch_size=batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=True,
+        ),
+    )
+    sims = query_embeddings @ chunk_embeddings.T
+
+    top1 = sims.argmax(axis=1)
+    hits = int((top1 == gold_indices).sum())
+    recall_at_1 = hits / len(questions)
+
+    console.print(
+        f"recall@1: {recall_at_1:.3f}  ({hits}/{len(questions)})  "
+        "model=all-MiniLM-L6-v2",
+        style="bold",
+        highlight=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -238,6 +300,20 @@ def main():
         help="Output JSONL path (default: chunks.jsonl)",
     )
     chunk_parser.set_defaults(func=chunk)
+
+    eval_parser = subparsers.add_parser("eval")
+    eval_parser.add_argument(
+        "--chunks",
+        default="chunks.jsonl",
+        help="Path to JSONL file containing all chunks (default: chunks.jsonl)",
+    )
+    eval_parser.add_argument(
+        "--test-set",
+        required=True,
+        help="Path to JSONL file containing questions and gold chunk IDs",
+    )
+    eval_parser.add_argument("--batch-size", type=int, default=64)
+    eval_parser.set_defaults(func=eval_models)
 
     args = parser.parse_args()
     args.func(args)
