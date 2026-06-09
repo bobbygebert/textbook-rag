@@ -1,4 +1,5 @@
 import json
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -86,17 +87,28 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
     for k in RECALL_KS:
         table.add_column(f"recall@{k}", justify="right")
     table.add_column("MRR", justify="right")
+    table.add_column("embed_s", justify="right")
+    table.add_column("chunks/s", justify="right")
 
     for cfg in EVAL_MODELS:
         console.print(f"\n{cfg.name}", style="bold")
         model = SentenceTransformer(cfg.name)
+        start = time.time()
         chunk_embeddings = encode(model, texts, cfg.doc_prefix, batch_size)
+        embed_time = time.time() - start
         query_embeddings = encode(model, questions, cfg.query_prefix, batch_size)
         sims = query_embeddings @ chunk_embeddings.T
         gold_sims = sims[np.arange(n), np.array(gold_indices)]
         ranks = (sims > gold_sims.reshape(n, 1)).sum(axis=1) + 1
         recalls = [int((ranks <= k).sum()) / n for k in RECALL_KS]
         mrr = float((1.0 / ranks).mean())
-        table.add_row(cfg.name, *[f"{r:.3f}" for r in recalls], f"{mrr:.3f}")
+        chunks_per_s = len(texts) / embed_time
+        table.add_row(
+            cfg.name,
+            *[f"{r:.3f}" for r in recalls],
+            f"{mrr:.3f}",
+            f"{embed_time:.1f}",
+            f"{chunks_per_s:.0f}",
+        )
 
     console.print(table)
