@@ -85,6 +85,7 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
     table.add_column("model")
     for k in RECALL_KS:
         table.add_column(f"recall@{k}", justify="right")
+    table.add_column("MRR", justify="right")
 
     for cfg in EVAL_MODELS:
         console.print(f"\n{cfg.name}", style="bold")
@@ -95,6 +96,7 @@ def eval_models(chunks_path: Path, test_set_path: Path, batch_size: int):
         gold_sims = sims[np.arange(n), np.array(gold_indices)]
         ranks = (sims > gold_sims.reshape(n, 1)).sum(axis=1) + 1
         recalls = [int((ranks <= k).sum()) / n for k in RECALL_KS]
-        table.add_row(cfg.name, *[f"{r:.3f}" for r in recalls])
+        mrr = float((1.0 / ranks).mean())
+        table.add_row(cfg.name, *[f"{r:.3f}" for r in recalls], f"{mrr:.3f}")
 
     console.print(table)
