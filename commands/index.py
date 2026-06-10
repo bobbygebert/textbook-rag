@@ -27,11 +27,13 @@ def load_chunks(chunks_path: Path) -> list[Document]:
 
 def index(doc_path: Path | None, chunks_path: Path | None):
     chroma_client = chromadb.PersistentClient(path="chroma_db")
-    collection = chroma_client.get_or_create_collection(name="textbook")
+    collection = chroma_client.get_or_create_collection(
+        name="textbook", metadata={"hnsw:space": "cosine"}
+    )
     assert (
         collection.count() == 0
     ), "Remove existing collection under chroma_db if you wish to replace it."
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL.name)
 
     # argparse guarantees exactly one of path / --chunks is set.
     if chunks_path:
@@ -42,7 +44,9 @@ def index(doc_path: Path | None, chunks_path: Path | None):
 
     embeddings = []
     for c in tqdm.tqdm(final_chunks):
-        embeddings.append(embedding_model.encode(c.page_content))
+        embeddings.append(
+            embedding_model.encode(EMBEDDING_MODEL.doc_prefix + c.page_content)
+        )
 
     ids = [str(x) for x in range(len(final_chunks))]
     documents = [c.page_content for c in final_chunks]

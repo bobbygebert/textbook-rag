@@ -46,7 +46,7 @@ def prompt(question: str):
     assert (
         collection.count() > 0
     ), "No collection found under chroma_db. Run the index command to create it."
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL.name)
     reranker = CrossEncoder(RERANKING_MODEL)
     llm = Llama.from_pretrained(
         repo_id=LLM_REPO_ID,
@@ -56,7 +56,9 @@ def prompt(question: str):
         verbose=False,
     )
 
-    query_embedding = embedding_model.encode(question).tolist()
+    query_embedding = embedding_model.encode(
+        EMBEDDING_MODEL.query_prefix + question
+    ).tolist()
     hits = collection.query([query_embedding], n_results=N_CANDIDATES)
     documents = hits["documents"]
     metadatas = hits["metadatas"]

@@ -1,6 +1,5 @@
 import json
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -9,36 +8,13 @@ from rich.console import Console
 from rich.table import Table
 from sentence_transformers import SentenceTransformer
 
-from commands.models import EMBEDDING_MODEL
+from commands.models import BGE_BASE, BGE_SMALL, E5_SMALL, MINILM
 
 console = Console()
 
 RECALL_KS = (1, 5, 20)
 
-
-@dataclass(frozen=True)
-class EmbeddingModel:
-    name: str
-    query_prefix: str = ""
-    doc_prefix: str = ""
-
-
-EVAL_MODELS = [
-    EmbeddingModel(EMBEDDING_MODEL),
-    EmbeddingModel(
-        "BAAI/bge-small-en-v1.5",
-        query_prefix="Represent this sentence for searching relevant passages: ",
-    ),
-    EmbeddingModel(
-        "intfloat/e5-small-v2",
-        query_prefix="query: ",
-        doc_prefix="passage: ",
-    ),
-    EmbeddingModel(
-        "BAAI/bge-base-en-v1.5",
-        query_prefix="Represent this sentence for searching relevant passages: ",
-    ),
-]
+EVAL_MODELS = [MINILM, BGE_SMALL, E5_SMALL, BGE_BASE]
 
 
 def encode(
